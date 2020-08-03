@@ -12,7 +12,20 @@ import Theme from './theme';
 
 const debug = logger('quill');
 
-const globalRegistry = new Parchment.Registry();
+const registries = {
+  global: new Parchment.Registry(),
+  namespaces: {},
+  get(namespace) {
+    if (!namespace) return this.global;
+    if (!this.namespaces[namespace]) {
+      this.namespaces[this.namespaces] = new Parchment.Registry({
+        parent: this.global,
+      });
+    }
+    return this.namespaces[this.namespaces];
+  },
+};
+
 Parchment.ParentBlot.uiClass = 'ql-ui';
 
 class Quill {
@@ -24,17 +37,18 @@ class Quill {
   }
 
   static find(node) {
-    return instances.get(node) || globalRegistry.find(node);
+    return instances.get(node) || registries.global.find(node);
   }
 
-  static import(name) {
-    if (this.imports[name] == null) {
+  static import(name, namespace = null) {
+    const imports = this.imports.get(namespace);
+    if (imports[name] == null) {
       debug.error(`Cannot import ${name}. Are you sure it was registered?`);
     }
-    return this.imports[name];
+    return imports[name];
   }
 
-  static register(path, target, overwrite = false) {
+  static register(path, target, options = {}) {
     if (typeof path !== 'string') {
       const name = path.attrName || path.blotName;
       if (typeof name === 'string') {
@@ -46,18 +60,25 @@ class Quill {
         });
       }
     } else {
-      if (this.imports[path] != null && !overwrite) {
+      if (typeof options === 'boolean') {
+        options = { overwrite: options };
+      }
+      const { overwrite = false, namespace = null } = options;
+      const imports = this.imports.get(namespace);
+      if (imports[path] != null && !overwrite) {
         debug.warn(`Overwriting ${path} with`, target);
       }
-      this.imports[path] = target;
+      imports[path] = target;
+
+      const registry = registries.get(namespace);
       if (
         (path.startsWith('blots/') || path.startsWith('formats/')) &&
         target.blotName !== 'abstract'
       ) {
-        globalRegistry.register(target);
+        registry.register(target);
       }
       if (typeof target.register === 'function') {
-        target.register(globalRegistry);
+        target.register(namespace);
       }
     }
   }
@@ -436,7 +457,7 @@ Quill.DEFAULTS = {
   modules: {},
   placeholder: '',
   readOnly: false,
-  registry: globalRegistry,
+  registry: registries.global,
   scrollingContainer: null,
   theme: 'default',
 };
@@ -446,10 +467,20 @@ Quill.sources = Emitter.sources;
 Quill.version = typeof QUILL_VERSION === 'undefined' ? 'dev' : QUILL_VERSION;
 
 Quill.imports = {
-  delta: Delta,
-  parchment: Parchment,
-  'core/module': Module,
-  'core/theme': Theme,
+  global: {
+    delta: Delta,
+    parchment: Parchment,
+    'core/module': Module,
+    'core/theme': Theme,
+  },
+  namespaces: {},
+  get(namespace) {
+    if (!namespace) return this.global;
+    if (!this.namespaces[namespace]) {
+      this.namespaces[namespace] = {};
+    }
+    return this.namespaces[namespace];
+  },
 };
 
 function expandConfig(container, userConfig) {
@@ -623,4 +654,5 @@ function shiftRange(range, index, length, source) {
   return new Range(start, end - start);
 }
 
-export { globalRegistry, expandConfig, overload, Quill as default };
+export const globalRegistry = registries.global;
+export { expandConfig, overload, Quill as default };
