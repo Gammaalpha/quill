@@ -6,3 +6,5 @@
 /src
 *.d.ts
 *.log
+
+.vscode\snipsnap.code-snippets
